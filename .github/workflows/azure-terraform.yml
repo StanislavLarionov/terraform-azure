@@ -1,0 +1,71 @@
+# GitHub Actions Workflow для автоматизації розгортання Terraform в Azure
+# Цей файл дозволяє автоматично ініціалізувати, перевіряти, планувати та застосовувати Terraform конфігурації в Azure.
+# Він також дозволяє запускати Terraform destroy при необхідності.  
+name: Terraform Azure Deployment
+
+on:
+  push:
+    branches:
+      - main 
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch: # Дозволяє запускати вручну через GitHub UI (для destroy або повторного apply)
+
+jobs:
+  terraform:
+    name: 'Terraform'
+    runs-on: ubuntu-latest # Використовуємо образ Ubuntu
+
+    # Необхідні дозволи для GitHub Actions для автентифікації в Azure OIDC
+    permissions:
+      id-token: write # Дозволяє GitHub Actions запитувати токени OIDC
+      contents: read  # Дозволяє зчитувати код репозиторію
+
+    # Змінні середовища для автентифікації Terraform Azure провайдера
+    env:
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.12.2 # Вказуємо версію Terraform, яку будемо використовувати
+
+      - name: Terraform Init
+        id: init
+        run: terraform init
+
+      - name: Terraform Validate
+        id: validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: terraform plan -no-color -input=false
+        continue-on-error: true # Дозволяє пайплайну продовжити, навіть якщо plan поверне помилку
+
+      - name: Terraform Apply
+        id: apply
+        # Запускаємо apply тільки при пуші до основної гілки
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        # Якщо plan не пройшов, то apply не буде виконано   
+        run: terraform apply -auto-approve -input=false
+        # Додаємо continue-on-error, щоб не зупиняти пайплайн при помилці apply
+
+      - name: Output Terraform Apply Results
+        # Цей крок буде виконаний тільки після успішного apply
+        if: success() && github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          echo "Terraform Apply completed successfully!"
+          terraform output resource_group_name
+          terraform output storage_account_name
+          terraform output storage_account_primary_blob_endpoint
