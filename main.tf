@@ -3,7 +3,7 @@ provider "azurerm" {
 }
 
 resource "azurerm_resource_group" "rg" {
-  name     = "my-terraform-rg-github-actions-001"
+  name     = "lavrysha-azure-rg-20250707"
   location = "West Europe"
 }
 
